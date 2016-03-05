@@ -5,10 +5,13 @@ from django.shortcuts import render
 from social.models import Post
 from django.contrib.auth.decorators import login_required
 from social.models import Comment, Post
+from django.http import HttpResponseRedirect, HttpResponseBadRequest, HttpResponseForbidden
+
 # Create your views here.
 
 def index(request):
-    return render(request, 'social/index.html')
+    posts = Post.objects.all()
+    return render(request, 'social/home.html', {'posts': posts, 'user': request.user})
 
 def social_login(request):
     pass
@@ -24,9 +27,28 @@ def social_login(request):
            return HttpResponseBadRequest("The combination of username and password does not exist.")
    else:
        return HttpResponseBadRequest(check[1])
+
+@login_required
+def delete_post(request, post_id):
+    post = Post.objects.get(pk=post_id)
+    if request.user != post.poster:
+        return HttpResponseForbidden("You can only delete your own posts!")
+    else:
+        post.delete()
+        return HttpResponseRedirect(reverse('social:home'))
+
 @login_required
 def home(request):
-    posts = Post.objects.all()
+    if request.method == 'GET':
+        posts = Post.objects.all()
+    elif request.method == 'POST':
+        check = _check_post_request(request, ['search_terms'])
+        if check[0]:
+            search_term = request.POST['search_terms']
+            posts = Post.objects.filter(text__icontains=search_term)
+        else:
+            return HttpResponseBadRequest(check[1])
+    posts = posts.order_by('-date_time')
     return render(request, 'social/home.html', {'posts': posts})
 
 @login_required
@@ -36,6 +58,8 @@ def add_post(request):
         new_post = Post()
         new_post.text = request.POST['text']
         new_post.poster = request.user
+        if 'photo' in request.FILES and request.FILES['photo'] is not None:
+    	    new_post.photo = request.FILES['photo']
         new_post.save()
         return HttpResponseRedirect(reverse('social:home'))
     else:
